@@ -4,7 +4,9 @@ Convert FAIRe-formatted metadata to ENA (European Nucleotide Archive) XML format
 
 ## Overview
 
-This tool automates the conversion of sample metadata from the FAIRe (Findable, Accessible, Interoperable, Reusable) standard to ENA's XML submission format, specifically targeting the ERC000024 (GSC MIxS water) checklist.
+This tool automates the conversion of *sample* metadata from the FAIRe (Findable, Accessible, Interoperable, Reusable) standard to ENA's XML submission format, specifically targeting the ERC000024 (GSC MIxS water) checklist.
+
+I am currently working on the same for the *run* metadata.
 
 ## Installation
 
