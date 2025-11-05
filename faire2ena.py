@@ -73,7 +73,7 @@ FAIRE_TO_ENA_MAPPING = {
     'nucl_acid_ext_kit': None,  # Can be combined with nucl_acid_ext
     
     # BUT: we get teh assay from the user. FAIRe lists all assays?
-    'assay_name': 'target_gene',
+    #'assay_name': 'target_subfragment',
     
     'neg_cont_type': 'negative_control_type',
     'pos_cont_type': 'positive_control_type',
@@ -98,7 +98,7 @@ def combine_value_with_unit(value: str, unit: str) -> str:
     return ""
 
 
-def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str = None) -> Dict[str, str]:
+def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str) -> Dict[str, str]:
     """
     Convert FAIRe metadata dictionary to ENA format.
     
@@ -148,10 +148,11 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str = None) -
         )
     
     geo_loc_name = faire_data.get('geo_loc_name', '')
-    if geo_loc_name:
+    if not pd.isna(geo_loc_name) and geo_loc_name:
         #ena_data['geographic_location_country_andor_sea'] = parse_geo_loc_name(geo_loc_name)
         # TODO:  check if we need to do the splitting
-        ena_data['geographic_location_country_andor_sea'] = geo_loc_name
+        # turn Indian Ocean: Rowley Shoals, Mermaid into Indian Ocean
+        ena_data['geographic_location_country_andor_sea'] = geo_loc_name.split(':')[0].strip()
     
     nucl_ext = faire_data.get('nucl_acid_ext', '')
     nucl_ext_kit = faire_data.get('nucl_acid_ext_kit', '')
@@ -161,6 +162,9 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str = None) -
         ena_data['nucleic_acid_extraction'] = f"{nucl_ext} ({nucl_ext_kit})"
     elif nucl_ext:
         ena_data['nucleic_acid_extraction'] = nucl_ext
+
+    # removing the assay from the BioSample - we have that per assay/run/experiment, not per sample
+    #ena_data['target_subfragment'] = assay
     
     unit_mappings = [
         ('diss_inorg_carb', 'diss_inorg_carb_unit', 'dissolved_inorganic_carbon'),
@@ -241,6 +245,10 @@ def generate_ena_xml(ena_data: Dict[str, str], sample_alias: str,
             xml_parts.append(f'        <VALUE>{value_escaped}</VALUE>')
             xml_parts.append('      </SAMPLE_ATTRIBUTE>')
     
+    xml_parts.append('       <SAMPLE_ATTRIBUTE>')
+    xml_parts.append('         <TAG>ENA-CHECKLIST</TAG>')
+    xml_parts.append('         <VALUE>ERC000024</VALUE>')
+    xml_parts.append('       </SAMPLE_ATTRIBUTE>')
     xml_parts.append('    </SAMPLE_ATTRIBUTES>')
     xml_parts.append('  </SAMPLE>')
     xml_parts.append('</SAMPLE_SET>')
@@ -249,7 +257,7 @@ def generate_ena_xml(ena_data: Dict[str, str], sample_alias: str,
 
 
 def process_faire_df(input_df: pd.DataFrame, output_file: str, project_name: str,
-                      taxon_id: str, center_name: str):
+        taxon_id: str, center_name: str):
     samples_xml = []
          
     list_of_dicts = input_df.to_dict(orient = 'records')
@@ -287,7 +295,6 @@ if __name__ == "__main__":
     parser = ArgumentParser(prog = 'FAIRe2ENA', description = 'Writes a sample-level XML file for submission to ENA')
 
     parser.add_argument('-i', '--input_file', help='Path of the FAIRe-formatted Excel file', required = True)
-    parser.add_argument('-a', '--assay', help = 'Name of the assay this dataset used', required = True)
     parser.add_argument('-n', '--name', help = 'Name of the project for ENA submission', required = True)
     parser.add_argument('-c', '--center_name', help = 'Name of the sequencing centre for ENA submission', required = True)
     parser.add_argument('-o', '--output_file', help = 'Name of the output file to submit to ENA', required = True)

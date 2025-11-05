@@ -23,7 +23,6 @@ pip install pandas openpyxl
 ```bash
 python faire2ena.py \
   -i <input_excel_file> \
-  -a <assay_name> \
   -n <project_name> \
   -c <center_name> \
   -o <output_xml_file>
@@ -34,7 +33,6 @@ python faire2ena.py \
 | Argument | Short | Description | Required |
 |----------|-------|-------------|----------|
 | `--input_file` | `-i` | Path to FAIRe-formatted Excel file | Yes |
-| `--assay` | `-a` | Name of the sequencing assay used | Yes |
 | `--name` | `-n` | Project name for ENA submission | Yes |
 | `--center_name` | `-c` | Name of the sequencing center | Yes |
 | `--output_file` | `-o` | Output XML filename | Yes |
@@ -44,7 +42,6 @@ python faire2ena.py \
 ```bash
 python faire2ena.py \
   -i rowley_shoals_metadata.xlsx \
-  -a "MiFish-U" \
   -n "Rowley Shoals Marine eDNA Survey" \
   -c "OceanOmics" \
   -o ena_samples.xml
@@ -82,7 +79,7 @@ The tool generates an ENA-compliant XML file structured as:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <SAMPLE_SET>
-  <SAMPLE alias="RS19_RS1_1_A" center_name="blu">
+  <SAMPLE alias="RS19_RS1_1_A" center_name="OceanOmics">
     <SAMPLE_NAME>
       <TAXON_ID>408172</TAXON_ID>
     </SAMPLE_NAME>
@@ -102,6 +99,8 @@ The tool generates an ENA-compliant XML file structured as:
   <!-- More samples... -->
 </SAMPLE_SET>
 ```
+
+You can then submit that XML to ENA via curl - see the [ENA manual](https://ena-docs.readthedocs.io/en/latest/submit/general-guide/programmatic.html).
 
 ## Field Mapping
 
