@@ -102,6 +102,11 @@ The tool generates an ENA-compliant XML file structured as:
 
 You can then submit that XML to ENA via curl - see the [ENA manual](https://ena-docs.readthedocs.io/en/latest/submit/general-guide/programmatic.html).
 
+Example (note the use of wwwdev, the test server)
+
+    curl -u 'your_secret_ENI_email@office.com':'please_dont_steal_my_password_i_WILL_cry' -F "SUBMISSION=@submission.xml"  -F "SAMPLE=@ena_submission.xml" https://wwwdev.ebi.ac.uk/ena/submit/drop-box/submit
+
+
 ## Field Mapping
 
 ### Core Metadata

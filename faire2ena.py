@@ -31,6 +31,7 @@ FAIRE_TO_ENA_MAPPING = {
     'samp_store_temp': 'sample_storage_temperature',
     'samp_store_loc': 'sample_storage_location',
     'samp_store_dur': 'sample_storage_duration',
+    'samp_category': 'control_sample',
     
     'size_frac_low': 'sizefraction_lower_threshold',
     'size_frac': 'sizefraction_upper_threshold',
@@ -72,14 +73,11 @@ FAIRE_TO_ENA_MAPPING = {
     'nucl_acid_ext': 'nucleic_acid_extraction',
     'nucl_acid_ext_kit': None,  # Can be combined with nucl_acid_ext
     
-    # BUT: we get teh assay from the user. FAIRe lists all assays?
-    #'assay_name': 'target_subfragment',
-    
     'neg_cont_type': 'negative_control_type',
     'pos_cont_type': 'positive_control_type',
     
     # OceanOmics-specific fields - TODO; decide?
-    'biological_rep': None,  # Not directly mapped to ENA
+    'biological_rep': 'replicate_id',  # NOT a FAIRe term - an OceanOmics term
     'site_id': None,  # Not directly mapped to ENA
     'tube_id': None,  # Not directly mapped to ENA
 }
@@ -94,7 +92,7 @@ def combine_value_with_unit(value: str, unit: str) -> str:
     if value and unit:
         return f"{value} {unit}"
     elif value:
-        return str(value)
+        return f"{value}"
     return ""
 
 
@@ -119,8 +117,7 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str) -> Dict[
             value = faire_data.get(faire_field, '')
             if pd.isna(value):
                 value = 'Unknown'
-
-            if value:
+            elif value:
                 ena_data[ena_field] = value
     
     # Special handling for combined fields
@@ -139,6 +136,11 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str) -> Dict[
         ena_data['amount_or_size_of_sample_collected'] = combine_value_with_unit(
             samp_size, samp_size_unit
         )
+
+    if ena_data['control_sample'] == 'sample':
+        ena_data['control_sample'] = 'FALSE'
+    else:
+        ena_data['control_sample'] = 'TRUE'
     
     dna_vol = faire_data.get('samp_vol_we_dna_ext', '')
     dna_vol_unit = faire_data.get('samp_vol_we_dna_ext_unit', '')
@@ -149,8 +151,6 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str) -> Dict[
     
     geo_loc_name = faire_data.get('geo_loc_name', '')
     if not pd.isna(geo_loc_name) and geo_loc_name:
-        #ena_data['geographic_location_country_andor_sea'] = parse_geo_loc_name(geo_loc_name)
-        # TODO:  check if we need to do the splitting
         # turn Indian Ocean: Rowley Shoals, Mermaid into Indian Ocean
         ena_data['geographic_location_country_andor_sea'] = geo_loc_name.split(':')[0].strip()
     
@@ -162,9 +162,9 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str) -> Dict[
         ena_data['nucleic_acid_extraction'] = f"{nucl_ext} ({nucl_ext_kit})"
     elif nucl_ext:
         ena_data['nucleic_acid_extraction'] = nucl_ext
-
-    # removing the assay from the BioSample - we have that per assay/run/experiment, not per sample
-    #ena_data['target_subfragment'] = assay
+    
+    if 'replicate_id' in ena_data: 
+        ena_data['replicate_id'] = str(int(ena_data['replicate_id']))
     
     unit_mappings = [
         ('diss_inorg_carb', 'diss_inorg_carb_unit', 'dissolved_inorganic_carbon'),
@@ -181,7 +181,7 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str) -> Dict[
         unit = faire_data.get(unit_field, '')
         if pd.isna(value):
             value = 'Unknown'
-        if value:
+        elif value:
             ena_data[ena_field] = combine_value_with_unit(value, unit)
     
     return ena_data
