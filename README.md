@@ -4,7 +4,7 @@ Convert FAIRe-formatted metadata to ENA (European Nucleotide Archive) XML format
 
 ## Overview
 
-This tool automates the conversion of *sample* metadata from the FAIRe (Findable, Accessible, Interoperable, Reusable) standard to ENA's XML submission format, specifically targeting the ERC000024 (GSC MIxS water) checklist.
+This tool automates the conversion of *sample* metadata from the [FAIRe](https://fair-edna.github.io/) (Findable, Accessible, Interoperable, Reusable) standard to ENA's XML submission format, specifically targeting the ERC000024 (GSC MIxS water) checklist.
 
 I am currently working on the same for the *run* metadata.
 
@@ -21,7 +21,7 @@ pip install pandas openpyxl
 ### Command Line Interface
 
 ```bash
-python faire2ena.py \
+python faire2ena_sample.py \
   -i <input_excel_file> \
   -n <project_name> \
   -c <center_name> \
@@ -40,7 +40,7 @@ python faire2ena.py \
 ### Example
 
 ```bash
-python faire2ena.py \
+python faire2ena_sample.py \
   -i rowley_shoals_metadata.xlsx \
   -n "Rowley Shoals Marine eDNA Survey" \
   -c "OceanOmics" \
@@ -104,7 +104,9 @@ You can then submit that XML to ENA via curl - see the [ENA manual](https://ena-
 
 Example (note the use of wwwdev, the test server)
 
-    curl -u 'your_secret_ENI_email@office.com':'please_dont_steal_my_password_i_WILL_cry' -F "SUBMISSION=@submission.xml"  -F "SAMPLE=@ena_submission.xml" https://wwwdev.ebi.ac.uk/ena/submit/drop-box/submit
+    curl -u 'your_secret_ENI_email@office.com':'please_dont_steal_my_password_i_WILL_cry' 
+      -F "SUBMISSION=@submission.xml"  -F "SAMPLE=@ena_submission.xml" 
+      https://wwwdev.ebi.ac.uk/ena/submit/drop-box/submit
 
 
 ## Field Mapping
