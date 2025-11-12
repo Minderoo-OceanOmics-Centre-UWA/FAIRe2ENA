@@ -72,30 +72,81 @@ python upload_reads.py
 
 #### Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `--host` | URL of the FTP we're uploading to |
-| `--subdir` | Subfolder on the FTP we're storing our files in |
-| `--user` | Username for the FTP |
-| `--passw` | Password for the FTP |
+| Argument | Short | Description | Required | Default |
+|----------|-------|-------------|----------|---------|
+| `--host` | - | ENA FTP host URL | Yes | `webin2.ebi.ac.uk` (test) |
+| `--subdir` | - | Subdirectory path on FTP server | Yes | - |
+| `--user` | - | Webin username | Yes | - |
+| `--passw` | - | Webin password | Yes | - |
 
+#### How it works
+
+The script:
+1. Searches for all `*.fastq.gz` files in the current directory
+2. Uploads each file to the specified ENA FTP location using `curl`
+3. Provides progress information for each upload
+4. Exits with an error if any upload fails
+
+**Important:** Run this script from the directory containing your FASTQ files.
 
 #### Example
 
 ```bash
-python upload_reads.py
-  --host "webin2.ebi.ac.uk"
-  --subdir "reads"
-  --user "webin12345"
-  --passw "super_secret_ive_got_a_secret"
+# For TEST server (files auto-deleted after 24 hours)
+cd /path/to/fastq/files
+python upload_reads_to_ena.py \
+  --host webin2.ebi.ac.uk \
+  --subdir rowley_shoals_2019 \
+  --user Webin-12345 \
+  --passw your_password
 ```
 
+```bash
+# For PRODUCTION server
+python upload_reads_to_ena.py \
+  --host webin.ebi.ac.uk \
+  --subdir rowley_shoals_2019 \
+  --user Webin-12345 \
+  --passw your_password
+```
 
+#### Output
 
+The script will show progress for each file:
+
+```
+Assuming files end in fastq.gz
+Found files: RS19_C13_A.R1.fq.gz
+RS19_C13_A.R2.fq.gz
+RS19_C13_B.R1.fq.gz
+RS19_C13_B.R2.fq.gz
+Uploading 4 file(s) to ENA TEST FTP (webin2.ebi.ac.uk)
+
+Uploading RS19_C13_A.R1.fq.gz → ftp://webin2.ebi.ac.uk/rowley_shoals_2019/
+Uploaded: RS19_C13_A.R1.fq.gz
+Uploading RS19_C13_A.R2.fq.gz → ftp://webin2.ebi.ac.uk/rowley_shoals_2019/
+Uploaded: RS19_C13_A.R2.fq.gz
+...
+
+All uploads complete.
+Files are now in your ENA TEST upload area:
+ftp://webin2.ebi.ac.uk//rowley_shoals_2019
+
+ℹ️  Note: Files on the TEST server are automatically deleted within 24 hours.
+```
+
+#### Important Notes
+
+- **Test vs Production**: 
+  - Test server: `webin2.ebi.ac.uk` (files deleted after 24 hours)
+  - Production server: `webin.ebi.ac.uk` (permanent storage)
+- **File naming**: The filenames in your `experimentRunMetadata` sheet must match exactly what you upload
+- **MD5 checksums**: Generate checksums before upload with `md5sum *.fastq.gz`
+- **Upload time**: Large files may take considerable time to upload
 
 ### 3. Experiment and Run Submission (`faire2ena_run.py`)
 
-We then submit the `output_xml_file` to ENA via curl, which generates a receipt XML file. We then use `faire2ena_run.py` to write the experiment and run submission XML files.
+After uploading FASTQ files and receiving the sample submission receipt from ENA, use this script to submit experiment and run metadata.
 
 ```bash
 python faire2ena_run.py \
@@ -118,6 +169,7 @@ python faire2ena_run.py \
 | `--experiment_output` | `-e` | Output file for EXPERIMENT XML | No | `ena_experiments.xml` |
 | `--run_output` | `-o` | Output file for RUN XML | No | `ena_runs.xml` |
 | `--instrument_model` | `-m` | Sequencing instrument model | No | `Illumina NextSeq 2000` |
+| `--assay` | `-a` | Assay name to append to experiment/run aliases | No | None |
 
 #### How it works
 
@@ -125,24 +177,54 @@ The script:
 1. Parses the ENA sample receipt XML to extract sample alias → accession mappings (e.g., `RS19_C13_A_2` → `ERS32025180`)
 2. Reads experiment/run metadata from the `experimentRunMetadata` sheet
 3. Matches each library/run to its corresponding sample accession
+4. Optionally appends an assay suffix to all experiment/run names (if `--assay` is provided)
 4. Generates two separate XML files:
    - **EXPERIMENT XML**: Contains library preparation metadata (library strategy, source, selection, platform)
    - **RUN XML**: Contains sequencing run metadata (FASTQ filenames, MD5 checksums)
 
 Each experiment is linked to a sample via the sample accession, and each run is linked to its experiment.
 
+**Multiple Assays per Sample**: If you have multiple assays (e.g., 16S, COI, 18S, ITS) for the same BioSample:
+1. Prepare separate FASTQ files for each assay
+2. Run the script separately for each assay using the `--assay` parameter
+3. This appends the assay name to experiment aliases (e.g., `RS19_C13_A` becomes `RS19_C13_A_16S`)
+4. Generate separate XML files for each assay (e.g., `ena_experiments_16S.xml`, `ena_experiments_COI.xml`)
+5. Submit each assay separately to ENA
+
+This ensures each BioSample can have multiple experiments (one per assay) without alias conflicts.
+
 #### Example
 
 ```bash
-# After receiving sample_receipt.xml from ENA
+# Submit all runs without assay suffix
 python faire2ena_run.py \
   -i rowley_shoals_metadata.xlsx \
   -r sample_receipt.xml \
   -s PRJEB12345 \
   -c "OceanOmics" \
   -e ena_experiments.xml \
-  -o ena_runs.xml \
-  -m "Illumina NovaSeq 6000"
+  -o ena_runs.xml
+
+# OR submit with assay suffix (for multiple assays per sample)
+# First submission: 16S data
+python faire2ena_run.py \
+  -i rowley_shoals_16S_metadata.xlsx \
+  -r sample_receipt.xml \
+  -s PRJEB12345 \
+  -c "OceanOmics" \
+  -a 16S \
+  -e ena_experiments_16S.xml \
+  -o ena_runs_16S.xml
+
+# Second submission: COI data (same samples, different files)
+python faire2ena_run.py \
+  -i rowley_shoals_COI_metadata.xlsx \
+  -r sample_receipt.xml \
+  -s PRJEB12345 \
+  -c "OceanOmics" \
+  -a COI \
+  -e ena_experiments_COI.xml \
+  -o ena_runs_COI.xml
 ```
 
 #### Output
@@ -151,8 +233,9 @@ The script will generate two files and print summary information:
 
 ```
 INFO: Loaded 245 sample accessions from receipt
-INFO: Generated EXPERIMENT XML with 245 experiments -> ena_experiments.xml
-INFO: Generated RUN XML with 245 runs -> ena_runs.xml
+INFO: Adding assay suffix '_16S' to all experiment and run names
+INFO: Generated EXPERIMENT XML with 245 experiments -> ena_experiments_16S.xml
+INFO: Generated RUN XML with 245 runs -> ena_runs_16S.xml
 ```
 
 If any samples are missing from the receipt, you'll see warnings:
@@ -166,7 +249,7 @@ WARNING: Skipped 3 samples without accessions:
 
 ## Input Format
 
-Boh scripts expects an Excel file with multiple sheets:
+Both script expect a FAIRe-formatted Excel file with multiple sheets:
 
 1. **`projectMetadata`** - Contains project-level information including `project_id`
 2. **`sampleMetadata`** - Starting at row 3, contains FAIRe-formatted sample data

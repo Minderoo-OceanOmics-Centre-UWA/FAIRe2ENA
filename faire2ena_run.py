@@ -33,7 +33,7 @@ def parse_ena_receipt(receipt_file: str) -> Dict[str, str]:
 
 def generate_experiment_xml(run_data: Dict[str, str], sample_accession: str,
                             study_accession: str, experiment_alias: str,
-                            center_name: str) -> str:
+                            center_name: str, instrument_model: str) -> str:
     """
     Generate ENA EXPERIMENT XML for a single run.
     
@@ -43,6 +43,7 @@ def generate_experiment_xml(run_data: Dict[str, str], sample_accession: str,
         study_accession: ENA study accession (PRJ...)
         experiment_alias: Unique alias for this experiment
         center_name: Sequencing center name
+        instrument_model: Sequencing instrument model
         
     Returns:
         str: XML string for EXPERIMENT
@@ -86,7 +87,7 @@ def generate_experiment_xml(run_data: Dict[str, str], sample_accession: str,
     xml_parts.append('    </DESIGN>')
     xml_parts.append('    <PLATFORM>')
     xml_parts.append('      <ILLUMINA>')
-    xml_parts.append('        <INSTRUMENT_MODEL>Illumina NovaSeq 6000</INSTRUMENT_MODEL>')
+    xml_parts.append(f'        <INSTRUMENT_MODEL>{instrument_model}</INSTRUMENT_MODEL>')
     xml_parts.append('      </ILLUMINA>')
     xml_parts.append('    </PLATFORM>')
     xml_parts.append('  </EXPERIMENT>')
@@ -138,7 +139,8 @@ def generate_run_xml(run_data: Dict[str, str], experiment_alias: str,
 def process_run_metadata(input_df: pd.DataFrame, receipt_file: str, 
                         study_accession: str, center_name: str,
                         experiment_output: str, run_output: str,
-                        instrument_model: str = "Illumina NovaSeq 6000"):
+                        instrument_model: str = "Illumina NovaSeq 6000",
+                        assay_filter: str = None):
     """
     Process run metadata and generate EXPERIMENT and RUN XML files.
     
@@ -150,9 +152,14 @@ def process_run_metadata(input_df: pd.DataFrame, receipt_file: str,
         experiment_output: Output file for EXPERIMENT XML
         run_output: Output file for RUN XML
         instrument_model: Sequencing instrument model
+        assay_filter: Optional assay name to add as suffix to experiment/run names
     """
     # Parse the receipt to get sample accessions
     alias_to_accession = parse_ena_receipt(receipt_file)
+    
+    # Info message if assay suffix is being used
+    if assay_filter:
+        print(f"INFO: Adding assay suffix '_{assay_filter}' to all experiment and run names")
     
     experiment_xml_parts = []
     run_xml_parts = []
@@ -174,7 +181,15 @@ def process_run_metadata(input_df: pd.DataFrame, receipt_file: str,
         sample_accession = alias_to_accession[samp_name]
         
         # Use lib_id as the experiment/run alias (or samp_name if lib_id is missing)
-        experiment_alias = lib_id if lib_id and not pd.isna(lib_id) else samp_name
+        if lib_id and not pd.isna(lib_id):
+            experiment_alias = lib_id
+        else:
+            experiment_alias = samp_name
+            
+        # Add assay suffix if specified
+        if assay_filter:
+            experiment_alias = f"{experiment_alias}_{assay_filter}"
+            
         run_alias = f"{experiment_alias}_run"
         
         # Convert row to dict for easier access
@@ -186,7 +201,8 @@ def process_run_metadata(input_df: pd.DataFrame, receipt_file: str,
             sample_accession,
             study_accession,
             experiment_alias,
-            center_name
+            center_name,
+            instrument_model
         )
         experiment_xml_parts.append(exp_xml)
         
@@ -251,12 +267,14 @@ if __name__ == "__main__":
                        default='ena_runs.xml')
     parser.add_argument('-m', '--instrument_model',
                        help='Sequencing instrument model',
-                       default='Illumina NextSeq 2000') # i  believe most OceanOmics run are on this machine, sensible default?
+                       default='Illumina NovaSeq 6000')
+    parser.add_argument('-a', '--assay',
+                       help='Assay name to append to experiment/run names (e.g., 16S, COI, 18S)',
+                       default=None)
     
     args = parser.parse_args()
     
     # Read the run metadata from the Excel file
-    # The sheet name might need to be adjusted based on your file structure
     df = pd.read_excel(args.input_file, sheet_name='experimentRunMetadata', skiprows=2)
     
     process_run_metadata(
@@ -266,5 +284,6 @@ if __name__ == "__main__":
         args.center_name,
         args.experiment_output,
         args.run_output,
-        args.instrument_model
+        args.instrument_model,
+        args.assay
     )
