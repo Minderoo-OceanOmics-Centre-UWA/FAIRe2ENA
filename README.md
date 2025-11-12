@@ -10,6 +10,9 @@ The toolset consists of two scripts:
 1. **`faire2ena_sample.py`** - Converts sample metadata to ENA SAMPLE XML (ERC000024 GSC MIxS water checklist)
 2. **`faire2ena_run.py`** - Converts experiment/run metadata to ENA EXPERIMENT and RUN XML files
 
+
+There is also a helper script written by Olivia Nguyen, `upload_reads_to_ena.py`, which uploads fastq.gz files to ENA.
+
 ## Installation
 
 ### Requirements
@@ -26,7 +29,8 @@ The typical ENA submission workflow is:
 
 1. **Submit samples** using `faire2ena_sample.py`, generating a ENA receipt file
 2. **Get sample accessions** from ENA receipt
-3. **Submit experiments and runs** using `faire2ena_run.py` with the receipt file
+3. **Upload FASTQ files** to ENA FTP using `upload_reads_to_ena.py`
+4. **Submit experiments and runs** using `faire2ena_run.py` with the receipt file
 
 ### 1. Sample Submission (`faire2ena_sample.py`)
 
@@ -54,7 +58,42 @@ python faire2ena_sample.py \
   -o ena_samples.xml
 ```
 
-### 2. Experiment and Run Submission (`faire2ena_run.py`)
+### 2. Read upload (`upload_reads_to_ena.py`)
+
+This uploads fastq.gz files in the working directory to ENA.
+
+```bash
+python upload_reads.py 
+  --host <host_name>
+  --subdir <folder_name>
+  --user <username>
+  --passw <userpassword>
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `--host` | URL of the FTP we're uploading to |
+| `--subdir` | Subfolder on the FTP we're storing our files in |
+| `--user` | Username for the FTP |
+| `--passw` | Password for the FTP |
+
+
+#### Example
+
+```bash
+python upload_reads.py
+  --host "webin2.ebi.ac.uk"
+  --subdir "reads"
+  --user "webin12345"
+  --passw "super_secret_ive_got_a_secret"
+```
+
+
+
+
+### 3. Experiment and Run Submission (`faire2ena_run.py`)
 
 We then submit the `output_xml_file` to ENA via curl, which generates a receipt XML file. We then use `faire2ena_run.py` to write the experiment and run submission XML files.
 
