@@ -1,85 +1,113 @@
-# First, we pull out the sample metadata nad map to ERC000024
-
 from typing import Dict, List, Tuple
 from datetime import datetime
 from argparse import ArgumentParser
 import pandas as pd
+import re
+
+# mandatory fields according to the checklist
+MANDATORY_FIELDS = [
+    'project name',
+    'collection date',
+    'geographic location (latitude)',
+    'geographic location (longitude)',
+    'geographic location (country and/or sea)',
+    'broad-scale environmental context',
+    'local environmental context',
+    'environmental medium',
+    'depth'
+]
+    
+# Mapping dictionary: required ENA fields, sensible OceanOmics defaults
+DEFAULTS_DICT = {
+    'env_local_scale' : 'marine pelagic zone [ENVO:00000208]',
+    'minimumDepthInMeters' : '0' # most OceanOmics samples are surface
+}
 
 # Mapping dictionary: FAIRe field -> ENA field
 FAIRE_TO_ENA_MAPPING = {
-    'materialSampleID': 'source_material_identifiers',
+    'materialSampleID': 'source material identifiers',
     
     # Collection date and location (MANDATORY)
-    'eventDate': 'collection_date',
-    'decimalLatitude': 'geographic_location_latitude',
-    'decimalLongitude': 'geographic_location_longitude',
-    'geo_loc_name': 'geographic_location_region_and_locality',
+    'eventDate': 'collection date',
+    'decimalLatitude': 'geographic location (latitude)',
+    'decimalLongitude': 'geographic location (longitude)',
+    'geo_loc_name': 'geographic location (region and locality)',
     
     # Environmental context (MANDATORY)
-    'env_broad_scale': 'broadscale_environmental_context',
-    'env_local_scale': 'local_environmental_context',
-    'env_medium': 'environmental_medium',
+    'env_broad_scale': 'broad-scale environmental context',
+    'env_local_scale': 'local environmental context',
+    'env_medium': 'environmental medium',
     
     # Depth (MANDATORY for water samples)
     'minimumDepthInMeters': 'depth',  
     'maximumDepthInMeters': None,  # we generally treat minimum and maximum identically
     
-    'samp_collect_device': 'sample_collection_device',
-    'samp_collect_method': 'sample_collection_method',
-    'samp_size': 'amount_or_size_of_sample_collected',
+    'samp_collect_device': 'sample collection device',
+    'samp_collect_method': 'sample collection method',
+    'samp_size': 'amount or size of sample collected',
     'samp_size_unit': None,  # Combined with samp_size
-    'samp_store_temp': 'sample_storage_temperature',
-    'samp_store_loc': 'sample_storage_location',
-    'samp_store_dur': 'sample_storage_duration',
+    'samp_store_temp': 'sample storage temperature',
+    'samp_store_loc': 'sample storage location',
+    'samp_store_dur': 'sample storage duration',
     'samp_category': 'control_sample',
     
-    'size_frac_low': 'sizefraction_lower_threshold',
-    'size_frac': 'sizefraction_upper_threshold',
+    'size_frac_low': 'sizefraction lower threshold',
+    'size_frac': 'sizefraction upper threshold',
     
     'temp': 'temperature',
     'salinity': 'salinity',
     'ph': 'ph',
-    'tot_depth_water_col': 'total_depth_of_water_column',
+    'tot_depth_water_col': 'total depth of water column',
     'elev': 'elevation',
     
-    'diss_oxygen': 'dissolved_oxygen',
+    'diss_oxygen': 'dissolved oxygen',
     'nitrate': 'nitrate',
     'nitrite': 'nitrite',
-    'diss_inorg_carb': 'dissolved_inorganic_carbon',
-    'diss_inorg_nitro': 'dissolved_inorganic_nitrogen',
-    'diss_org_carb': 'dissolved_organic_carbon',
-    'diss_org_nitro': 'dissolved_organic_nitrogen',
-    'tot_diss_nitro': 'total_dissolved_nitrogen',
-    'tot_inorg_nitro': 'total_inorganic_nitrogen',
-    'tot_nitro': 'total_nitrogen_concentration',
-    'tot_part_carb': 'total_particulate_carbon',
-    'tot_org_carb': 'total_organic_carbon',
-    'tot_nitro_content': 'total_nitrogen_content',
-    'part_org_carb': 'particulate_organic_carbon',
-    'part_org_nitro': 'particulate_organic_nitrogen',
-    'org_carb': 'organic_carbon',
-    'org_matter': 'organic_matter',
-    'org_nitro': 'organic_nitrogen',
+    'diss_inorg_carb': 'dissolved inorganic carbon',
+    'diss_inorg_nitro': 'dissolved inorganic nitrogen',
+    'diss_org_carb': 'dissolved organic carbon',
+    'diss_org_nitro': 'dissolved organic nitrogen',
+    'tot_diss_nitro': 'total dissolved nitrogen',
+    'tot_inorg_nitro': 'total inorganic nitrogen',
+    'tot_nitro': 'total nitrogen concentration',
+    'tot_part_carb': 'total particulate carbon',
+    'tot_org_carb': 'total organic carbon',
+    'tot_nitro_content': 'total nitrogen content',
+    'part_org_carb': 'particulate organic carbon',
+    'part_org_nitro': 'particulate organic nitrogen',
+    'org_carb': 'organic carbon',
+    'org_matter': 'organic matter',
+    'org_nitro': 'organic nitrogen',
     
     'chlorophyll': 'chlorophyll',
-    'light_intensity': 'light_intensity',
-    'suspend_part_matter': 'suspended_particulate_matter',
-    'tidal_stage': 'tidal_stage',
+    'light_intensity': 'light intensity',
+    'suspend_part_matter': 'suspended particulate matter',
+    'tidal_stage': 'tidal stage',
     'turbidity': 'turbidity',
-    'water_current': 'water_current',
+    'water_current': 'water current',
     
-    'samp_mat_process': 'sample_material_processing',
-    'samp_vol_we_dna_ext': 'sample_volume_or_weight_for_dna_extraction',
-    'nucl_acid_ext': 'nucleic_acid_extraction',
+    'samp_mat_process': 'sample material processing',
+    'samp_vol_we_dna_ext': 'sample volume or weight for DNA extraction',
+    'nucl_acid_ext': 'nucleic acid extraction',
     'nucl_acid_ext_kit': None,  # Can be combined with nucl_acid_ext
     
-    'neg_cont_type': 'negative_control_type',
-    'pos_cont_type': 'positive_control_type',
+    'neg_cont_type': 'negative control type',
+    'pos_cont_type': 'positive control type',
     
     # OceanOmics-specific fields - TODO; decide?
     'biological_rep': 'replicate_id',  # NOT a FAIRe term - an OceanOmics term
     'site_id': None,  # Not directly mapped to ENA
     'tube_id': None,  # Not directly mapped to ENA
+}
+
+ENA_TO_FAIRE_MAPPING = {value: key for key, value in FAIRE_TO_ENA_MAPPING.items()}
+
+# some values have units we need to add. list them here
+TAG_TO_UNIT = {
+        'geographic location (longitude)' : 'DD',
+        'geographic location (latitude)': 'DD',
+        'depth' : 'm',
+        'amount or size of sample collected': 'L'
 }
 
 
@@ -109,61 +137,65 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str) -> Dict[
     """
     ena_data = {}
     
-    if project_name:
-        ena_data['project_name'] = project_name
+    ena_data['project name'] = project_name
     
+    this_is_control = False
+    if faire_data['samp_category'] != 'sample':
+        this_is_control = True
+
     for faire_field, ena_field in FAIRE_TO_ENA_MAPPING.items():
         if ena_field and faire_field in faire_data:
             value = faire_data.get(faire_field, '')
-            if pd.isna(value):
-                value = 'Unknown'
-            elif value:
+            if this_is_control and pd.isna(value):
+                ena_data[ena_field] = 'missing: control sample'
+            elif value and not pd.isna(value):
                 ena_data[ena_field] = value
     
+    if ena_data['control_sample'] == 'sample':
+        ena_data['control_sample'] = 'FALSE'
+    else:
+        ena_data['control_sample'] = 'TRUE'
+
     # Special handling for combined fields
     
     min_depth = faire_data.get('minimumDepthInMeters', '')
     max_depth = faire_data.get('maximumDepthInMeters', '')
     # OceanOmics usually sets these to the same
-    if min_depth or max_depth:
+    if (min_depth or max_depth) and not pd.isna(min_depth):
         #ena_data['depth'] = parse_depth(min_depth, max_depth)
         ena_data['depth'] = min_depth
 
     
     samp_size = faire_data.get('samp_size', '')
     samp_size_unit = faire_data.get('samp_size_unit', '')
-    if samp_size:
-        ena_data['amount_or_size_of_sample_collected'] = combine_value_with_unit(
+    if samp_size and not this_is_control:
+        ena_data['amount or size of sample collected'] = combine_value_with_unit(
             samp_size, samp_size_unit
         )
 
-    if ena_data['control_sample'] == 'sample':
-        ena_data['control_sample'] = 'FALSE'
-    else:
-        ena_data['control_sample'] = 'TRUE'
     
     dna_vol = faire_data.get('samp_vol_we_dna_ext', '')
     dna_vol_unit = faire_data.get('samp_vol_we_dna_ext_unit', '')
-    if dna_vol:
-        ena_data['sample_volume_or_weight_for_dna_extraction'] = combine_value_with_unit(
+    if dna_vol and not this_is_control and not pd.isna(dna_vol):
+        ena_data['sample volume for weight for DNA extraction'] = combine_value_with_unit(
             dna_vol, dna_vol_unit
         )
     
     geo_loc_name = faire_data.get('geo_loc_name', '')
-    if not pd.isna(geo_loc_name) and geo_loc_name:
+    if not pd.isna(geo_loc_name) and geo_loc_name and not this_is_control:
         # turn Indian Ocean: Rowley Shoals, Mermaid into Indian Ocean
-        ena_data['geographic_location_country_andor_sea'] = geo_loc_name.split(':')[0].strip()
+        ena_data['geographic location (country and/or sea)'] = geo_loc_name.split(':')[0].strip()
+    elif this_is_control:
+        ena_data['geographic location (country and/or sea)'] = 'missing: control sample'
     
     nucl_ext = faire_data.get('nucl_acid_ext', '')
     nucl_ext_kit = faire_data.get('nucl_acid_ext_kit', '')
-    if pd.isna(nucl_ext):
-        ena_data['nucleic_acid_extraction'] = 'Unknown'
-    elif nucl_ext and nucl_ext_kit:
-        ena_data['nucleic_acid_extraction'] = f"{nucl_ext} ({nucl_ext_kit})"
-    elif nucl_ext:
-        ena_data['nucleic_acid_extraction'] = nucl_ext
+    if nucl_ext and nucl_ext_kit and not pd.isna(nucl_ext):
+        ena_data['nucleic acid extraction'] = f"{nucl_ext} ({nucl_ext_kit})"
+    elif nucl_ext and not pd.isna(nucl_ext):
+        ena_data['nucleic acid extraction'] = nucl_ext
     
-    if 'replicate_id' in ena_data: 
+    if 'replicate_id' in ena_data and not this_is_control: 
         ena_data['replicate_id'] = str(int(ena_data['replicate_id']))
     
     unit_mappings = [
@@ -179,9 +211,9 @@ def convert_faire_to_ena(faire_data: Dict[str, str], project_name: str) -> Dict[
     for value_field, unit_field, ena_field in unit_mappings:
         value = faire_data.get(value_field, '')
         unit = faire_data.get(unit_field, '')
-        if pd.isna(value):
-            value = 'Unknown'
-        elif value:
+        #if pd.isna(value):
+        #    ena_data[ena_field] = 'Unknown'
+        if value and not pd.isna(value):
             ena_data[ena_field] = combine_value_with_unit(value, unit)
     
     return ena_data
@@ -197,21 +229,27 @@ def validate_mandatory_fields(ena_data: Dict[str, str]) -> Tuple[bool, List[str]
     Returns:
         tuple: (bool, list) - (is_valid, missing_fields)
     """
-    mandatory_fields = [
-        'project_name',
-        'collection_date',
-        'geographic_location_latitude',
-        'geographic_location_longitude',
-        'geographic_location_country_andor_sea',
-        'broadscale_environmental_context',
-        'local_environmental_context',
-        'environmental_medium',
-        'depth'
-    ]
-    
-    missing = [field for field in mandatory_fields if field not in ena_data or not ena_data[field]]
+    missing = [field for field in MANDATORY_FIELDS if field not in ena_data or not ena_data[field]]
     return len(missing) == 0, missing
 
+def validate_date(ena_data: Dict[str, str]) -> bool:
+    """
+    Validates whether a given date fits the ENA date regular expression.
+
+    Args:
+        ena_data (dict): Dictionary with ENA metadata
+        
+    Returns:
+        bool - is_valid
+    """
+    # ew
+    ena_pattern = r"(^[12][0-9]{3}(-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01])(T[0-9]{2}:[0-9]{2}(:[0-9]{2})?Z?([+-][0-9]{1,2})?)?)?)?(/[0-9]{4}(-[0-9]{2}(-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2})?Z?([+-][0-9]{1,2})?)?)?)?)?$)|(^not applicable$)|(^not collected$)|(^not provided$)|(^restricted access$)|(^missing: control sample$)|(^missing: sample group$)|(^missing: synthetic construct$)|(^missing: lab stock$)|(^missing: third party data$)|(^missing: data agreement established pre-2023$)|(^missing: endangered species$)|(^missing: human-identifiable$)|(^missing$)"
+
+    # Check if it matches ENA pattern
+    if re.match(ena_pattern, ena_data['collection date']):
+        return True
+    else:
+        return False
 
 def generate_ena_xml(ena_data: Dict[str, str], sample_alias: str, 
                      taxon_id: str = "32644", center_name: str = "YOUR_CENTER") -> str:
@@ -236,13 +274,20 @@ def generate_ena_xml(ena_data: Dict[str, str], sample_alias: str,
     xml_parts.append('    <SAMPLE_ATTRIBUTES>')
     
     for field_name, value in sorted(ena_data.items()):
-        if value and value != 'Unknown':  # Only include non-empty values
+        if value:
+            if field_name not in MANDATORY_FIELDS and value == 'missing: control sample':
+                # skip optional fields if we have no content
+                # otherwise control samples get heaps content
+                continue
+
             # Escape XML special characters
-            # TODO - do we skip Unknowns? 
             value_escaped = str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             xml_parts.append('      <SAMPLE_ATTRIBUTE>')
             xml_parts.append(f'        <TAG>{field_name}</TAG>')
             xml_parts.append(f'        <VALUE>{value_escaped}</VALUE>')
+            if field_name in TAG_TO_UNIT:
+                unit = TAG_TO_UNIT[field_name]
+                xml_parts.append(f'        <UNITS>{unit}</UNITS>')
             xml_parts.append('      </SAMPLE_ATTRIBUTE>')
     
     xml_parts.append('       <SAMPLE_ATTRIBUTE>')
@@ -256,7 +301,7 @@ def generate_ena_xml(ena_data: Dict[str, str], sample_alias: str,
     return '\n'.join(xml_parts)
 
 
-def process_faire_df(input_df: pd.DataFrame, output_file: str, project_name: str,
+def process_faire_df(input_df: pd.DataFrame, output_file: str, project_name: str, 
         taxon_id: str, center_name: str):
     samples_xml = []
          
@@ -269,7 +314,16 @@ def process_faire_df(input_df: pd.DataFrame, output_file: str, project_name: str
         sample_name = row.get('samp_name', 'unknown')
         
         if not is_valid:
-            print(f"WARNING: Sample {sample_name} missing mandatory fields: {missing}")
+            for m in missing:
+                ena_orig = ENA_TO_FAIRE_MAPPING[m]
+                new_default = DEFAULTS_DICT[ena_orig]
+                ena_data[m] = new_default
+                print(f"WARNING: Sample name {sample_name} missing mandatory field '{m}', setting to default '{new_default}'")
+
+        date_is_valid = validate_date(ena_data)
+        if not date_is_valid:
+            print(f"WARNING: Sample name {sample_name} has invalid date {ena_data['collection date']}. Replacing with 'not provided'.")
+            ena_data['collection date'] = 'not provided'
         
         sample_xml = generate_ena_xml(
             ena_data, 
@@ -295,7 +349,6 @@ if __name__ == "__main__":
     parser = ArgumentParser(prog = 'FAIRe2ENA', description = 'Writes a sample-level XML file for submission to ENA')
 
     parser.add_argument('-i', '--input_file', help='Path of the FAIRe-formatted Excel file', required = True)
-    parser.add_argument('-n', '--name', help = 'Name of the project for ENA submission', required = True)
     parser.add_argument('-c', '--center_name', help = 'Name of the sequencing centre for ENA submission', required = True)
     parser.add_argument('-o', '--output_file', help = 'Name of the output file to submit to ENA', required = True)
 
@@ -303,4 +356,8 @@ if __name__ == "__main__":
 
     df = pd.read_excel(args.input_file, sheet_name = 'sampleMetadata', skiprows = 2)
 
-    process_faire_df(df, args.output_file, args.name, taxon_id = '408172', center_name = args.center_name)
+    project_df = pd.read_excel(args.input_file, sheet_name = 'projectMetadata')
+    project_name = project_df.loc[project_df['term_name'] == 'project_id', 'project_level'].values[0]
+    print(f'INFO: found project ID {project_name}')
+
+    process_faire_df(df, args.output_file, project_name, taxon_id = '408172', center_name = args.center_name)

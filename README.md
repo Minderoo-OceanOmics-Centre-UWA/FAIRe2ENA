@@ -23,7 +23,6 @@ pip install pandas openpyxl
 ```bash
 python faire2ena_sample.py \
   -i <input_excel_file> \
-  -n <project_name> \
   -c <center_name> \
   -o <output_xml_file>
 ```
@@ -33,23 +32,26 @@ python faire2ena_sample.py \
 | Argument | Short | Description | Required |
 |----------|-------|-------------|----------|
 | `--input_file` | `-i` | Path to FAIRe-formatted Excel file | Yes |
-| `--name` | `-n` | Project name for ENA submission | Yes |
 | `--center_name` | `-c` | Name of the sequencing center | Yes |
 | `--output_file` | `-o` | Output XML filename | Yes |
+
+**Note:** The project name is now automatically extracted from the `projectMetadata` sheet in the Excel file (from the `project_id` term).
 
 ### Example
 
 ```bash
 python faire2ena_sample.py \
   -i rowley_shoals_metadata.xlsx \
-  -n "Rowley Shoals Marine eDNA Survey" \
   -c "OceanOmics" \
   -o ena_samples.xml
 ```
 
 ## Input Format
 
-The tool expects an Excel file with a `sampleMetadata` sheet (starting at row 3) containing FAIRe-formatted columns:
+The tool expects an Excel file with two sheets:
+
+1. **`projectMetadata`** - Contains project-level information including `project_id`
+2. **`sampleMetadata`** - Starting at row 3, contains FAIRe-formatted sample data
 
 ### Required Fields
 
@@ -85,16 +87,17 @@ The tool generates an ENA-compliant XML file structured as:
     </SAMPLE_NAME>
     <SAMPLE_ATTRIBUTES>
       <SAMPLE_ATTRIBUTE>
-        <TAG>amount_or_size_of_sample_collected</TAG>
-        <VALUE>1.0 L</VALUE>
+        <TAG>amount or size of sample collected</TAG>
+        <VALUE>1.0</VALUE>
+        <UNITS>L</UNITS>
       </SAMPLE_ATTRIBUTE>
       <SAMPLE_ATTRIBUTE>
-        <TAG>broadscale_environmental_context</TAG>
+        <TAG>broad-scale environmental context</TAG>
         <VALUE>ocean biome [ENVO:01000048]</VALUE>
       </SAMPLE_ATTRIBUTE>
       <SAMPLE_ATTRIBUTE>
-        <TAG>collection_date</TAG>
-        <VALUE>2019-10-16T00:00:00</VALUE>
+        <TAG>collection date</TAG>
+        <VALUE>2019-10-16</VALUE>
       </SAMPLE_ATTRIBUTE>
   <!-- More samples... -->
 </SAMPLE_SET>
@@ -102,12 +105,14 @@ The tool generates an ENA-compliant XML file structured as:
 
 You can then submit that XML to ENA via curl - see the [ENA manual](https://ena-docs.readthedocs.io/en/latest/submit/general-guide/programmatic.html).
 
-Example (note the use of wwwdev, the test server)
+Example (note the use of wwwdev, the test server):
 
-    curl -u 'your_secret_ENI_email@office.com':'please_dont_steal_my_password_i_WILL_cry' 
-      -F "SUBMISSION=@submission.xml"  -F "SAMPLE=@ena_submission.xml" 
-      https://wwwdev.ebi.ac.uk/ena/submit/drop-box/submit
-
+```bash
+curl -u 'your_secret_ENI_email@office.com':'please_dont_steal_my_password_i_WILL_cry' \
+  -F "SUBMISSION=@submission.xml" \
+  -F "SAMPLE=@ena_submission.xml" \
+  https://wwwdev.ebi.ac.uk/ena/submit/drop-box/submit
+```
 
 ## Field Mapping
 
@@ -115,26 +120,27 @@ Example (note the use of wwwdev, the test server)
 
 | FAIRe Field | ENA Field | Mandatory |
 |-------------|-----------|-----------|
-| `materialSampleID` | `source_material_identifiers` | Optional |
-| `eventDate` | `collection_date` | **Yes** |
-| `decimalLatitude` | `geographic_location_latitude` | **Yes** |
-| `decimalLongitude` | `geographic_location_longitude` | **Yes** |
-| `geo_loc_name` | `geographic_location_country_andor_sea` | **Yes** |
-| `env_broad_scale` | `broadscale_environmental_context` | **Yes** |
-| `env_local_scale` | `local_environmental_context` | **Yes** |
-| `env_medium` | `environmental_medium` | **Yes** |
+| `materialSampleID` | `source material identifiers` | Optional |
+| `eventDate` | `collection date` | **Yes** |
+| `decimalLatitude` | `geographic location (latitude)` | **Yes** |
+| `decimalLongitude` | `geographic location (longitude)` | **Yes** |
+| `geo_loc_name` | `geographic location (country and/or sea)` | **Yes** |
+| `env_broad_scale` | `broad-scale environmental context` | **Yes** |
+| `env_local_scale` | `local environmental context` | **Yes** |
+| `env_medium` | `environmental medium` | **Yes** |
 | `minimumDepthInMeters` | `depth` | **Yes** |
 
 ### Sample Collection
 
 | FAIRe Field | ENA Field |
 |-------------|-----------|
-| `samp_collect_device` | `sample_collection_device` |
-| `samp_collect_method` | `sample_collection_method` |
-| `samp_size` + `samp_size_unit` | `amount_or_size_of_sample_collected` |
-| `samp_store_temp` | `sample_storage_temperature` |
-| `samp_store_loc` | `sample_storage_location` |
-| `samp_store_dur` | `sample_storage_duration` |
+| `samp_collect_device` | `sample collection device` |
+| `samp_collect_method` | `sample collection method` |
+| `samp_size` + `samp_size_unit` | `amount or size of sample collected` |
+| `samp_store_temp` | `sample storage temperature` |
+| `samp_store_loc` | `sample storage location` |
+| `samp_store_dur` | `sample storage duration` |
+| `samp_category` | `control_sample` |
 
 ### Environmental Measurements
 
@@ -143,7 +149,7 @@ Example (note the use of wwwdev, the test server)
 | `temp` | `temperature` |
 | `salinity` | `salinity` |
 | `ph` | `ph` |
-| `diss_oxygen` | `dissolved_oxygen` |
+| `diss_oxygen` | `dissolved oxygen` |
 | `chlorophyll` | `chlorophyll` |
 | `turbidity` | `turbidity` |
 
@@ -153,30 +159,57 @@ Example (note the use of wwwdev, the test server)
 |-------------|-----------|
 | `nitrate` | `nitrate` |
 | `nitrite` | `nitrite` |
-| `diss_org_carb` | `dissolved_organic_carbon` |
-| `diss_inorg_carb` | `dissolved_inorganic_carbon` |
-| `tot_nitro` | `total_nitrogen_concentration` |
+| `diss_org_carb` | `dissolved organic carbon` |
+| `diss_inorg_carb` | `dissolved inorganic carbon` |
+| `tot_nitro` | `total nitrogen concentration` |
 
 [See full mapping in source code]
 
-## Validation
+## Validation and Error Handling
 
-The tool automatically validates that all mandatory ENA fields are present. If any are missing, a warning is displayed:
+### Mandatory Field Validation
+
+The tool automatically validates that all mandatory ENA fields are present. If any are missing, default values are applied:
 
 ```
-WARNING: Sample RS19_RS1_1_A missing mandatory fields: ['depth', 'collection_date']
+WARNING: Sample name RS19_RS1_1_A missing mandatory field 'depth', setting to default '0'
 ```
+
+**Default Values:**
+- `env_local_scale`: `marine pelagic zone [ENVO:00000208]`
+- `minimumDepthInMeters`: `0` (most OceanOmics samples are surface)
+
+### Date Validation
+
+Collection dates are validated against ENA's required pattern. Invalid dates (such as `2019-00-00`) are automatically replaced:
+
+```
+WARNING: Sample name RS19_RS1_1_A has invalid date 2019-00-00T00:00:00. Replacing with 'not provided'.
+```
+
+**Valid date formats:**
+- Full date: `2019-10-16`
+- Year-month: `2019-10`
+- Year only: `2019`
+- Date with time: `2019-10-16T00:00:00`
+- Missing values: `not provided`, `not collected`
+
+### Control Samples
+
+Control samples (where `samp_category` is not `'sample'`) are handled specially:
+- `control_sample` field is set to `TRUE`
+- Missing mandatory fields are set to `'missing: control sample'`
+- Optional fields with no data are omitted from the XML
 
 ## Taxon ID
 
 The default taxon ID is set to `408172` (marine metagenome). Modify this in the code if working with different organisms:
 
 ```python
-process_faire_df(df, args.output_file, args.name, 
-                 taxon_id='YOUR_TAXON_ID', 
+process_faire_df(df, args.output_file, project_name,
+                 taxon_id='YOUR_TAXON_ID',
                  center_name=args.center_name)
 ```
-
 
 ## Troubleshooting
 
@@ -188,13 +221,31 @@ If you see validation warnings, check that your FAIRe file contains:
 3. ENVO ontology terms for environmental contexts
 4. Depth measurements in meters
 
+The tool will apply sensible defaults for OceanOmics samples if these are missing.
+
+### Invalid Collection Dates
+
+Dates with invalid months or days (e.g., `2019-00-00`) will be automatically set to `'not provided'`. Ensure dates follow ISO 8601 format or use year-only precision if exact dates are unknown.
+
 ### Unit Handling
 
 Fields with units are automatically combined:
-- `samp_size: 1` + `samp_size_unit: L` → `amount_or_size_of_sample_collected: 1 L`
+- `samp_size: 1` + `samp_size_unit: L` → `amount or size of sample collected: 1 L`
 
-If units are missing, the tool uses "Unknown".
+Units are also added to specific fields via the `<UNITS>` XML tag:
+- `depth` → units: `m`
+- `geographic location (latitude/longitude)` → units: `DD` (decimal degrees)
+- `amount or size of sample collected` → units: `L`
+
+### Geographic Location Parsing
+
+The `geo_loc_name` field is automatically parsed to extract the country/sea name:
+- Input: `Indian Ocean: Rowley Shoals, Mermaid`
+- Output: `Indian Ocean` (text before the first colon)
 
 ### Empty Values
 
-Empty or `NaN` values are converted to "Unknown" for required fields.
+Empty or `NaN` values are handled as follows:
+- For control samples: set to `'missing: control sample'`
+- For regular samples with missing mandatory fields: replaced with defaults
+- Optional empty fields: omitted from the XML output
