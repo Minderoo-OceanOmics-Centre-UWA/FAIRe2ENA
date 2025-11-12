@@ -4,9 +4,11 @@ Convert FAIRe-formatted metadata to ENA (European Nucleotide Archive) XML format
 
 ## Overview
 
-This tool automates the conversion of *sample* metadata from the [FAIRe](https://fair-edna.github.io/) (Findable, Accessible, Interoperable, Reusable) standard to ENA's XML submission format, specifically targeting the ERC000024 (GSC MIxS water) checklist.
+This toolset automates the conversion of metadata from the [FAIRe](https://fair-edna.github.io/) (Findable, Accessible, Interoperable, Reusable) standard to ENA's XML submission format.
 
-I am currently working on the same for the *run* metadata.
+The toolset consists of two scripts:
+1. **`faire2ena_sample.py`** - Converts sample metadata to ENA SAMPLE XML (ERC000024 GSC MIxS water checklist)
+2. **`faire2ena_run.py`** - Converts experiment/run metadata to ENA EXPERIMENT and RUN XML files
 
 ## Installation
 
@@ -18,7 +20,15 @@ pip install pandas openpyxl
 
 ## Usage
 
-### Command Line Interface
+### Workflow Overview
+
+The typical ENA submission workflow is:
+
+1. **Submit samples** using `faire2ena_sample.py`, generating a ENA receipt file
+2. **Get sample accessions** from ENA receipt
+3. **Submit experiments and runs** using `faire2ena_run.py` with the receipt file
+
+### 1. Sample Submission (`faire2ena_sample.py`)
 
 ```bash
 python faire2ena_sample.py \
@@ -27,7 +37,7 @@ python faire2ena_sample.py \
   -o <output_xml_file>
 ```
 
-### Arguments
+#### Arguments
 
 | Argument | Short | Description | Required |
 |----------|-------|-------------|----------|
@@ -35,9 +45,7 @@ python faire2ena_sample.py \
 | `--center_name` | `-c` | Name of the sequencing center | Yes |
 | `--output_file` | `-o` | Output XML filename | Yes |
 
-**Note:** The project name is now automatically extracted from the `projectMetadata` sheet in the Excel file (from the `project_id` term).
-
-### Example
+#### Example
 
 ```bash
 python faire2ena_sample.py \
@@ -46,14 +54,88 @@ python faire2ena_sample.py \
   -o ena_samples.xml
 ```
 
+### 2. Experiment and Run Submission (`faire2ena_run.py`)
+
+We then submit the `output_xml_file` to ENA via curl, which generates a receipt XML file. We then use `faire2ena_run.py` to write the experiment and run submission XML files.
+
+```bash
+python faire2ena_run.py \
+  -i <input_excel_file> \
+  -r <receipt_xml_file> \
+  -s <study_accession> \
+  -c <center_name> \
+  -e <experiment_output_xml> \
+  -o <run_output_xml>
+```
+
+#### Arguments
+
+| Argument | Short | Description | Required | Default |
+|----------|-------|-------------|----------|---------|
+| `--input_file` | `-i` | Path to FAIRe-formatted Excel file | Yes | - |
+| `--receipt_file` | `-r` | ENA sample submission receipt XML | Yes | - |
+| `--study_accession` | `-s` | ENA study accession (e.g., PRJEB12345) | Yes | - |
+| `--center_name` | `-c` | Name of the sequencing center | Yes | - |
+| `--experiment_output` | `-e` | Output file for EXPERIMENT XML | No | `ena_experiments.xml` |
+| `--run_output` | `-o` | Output file for RUN XML | No | `ena_runs.xml` |
+| `--instrument_model` | `-m` | Sequencing instrument model | No | `Illumina NextSeq 2000` |
+
+#### How it works
+
+The script:
+1. Parses the ENA sample receipt XML to extract sample alias → accession mappings (e.g., `RS19_C13_A_2` → `ERS32025180`)
+2. Reads experiment/run metadata from the `experimentRunMetadata` sheet
+3. Matches each library/run to its corresponding sample accession
+4. Generates two separate XML files:
+   - **EXPERIMENT XML**: Contains library preparation metadata (library strategy, source, selection, platform)
+   - **RUN XML**: Contains sequencing run metadata (FASTQ filenames, MD5 checksums)
+
+Each experiment is linked to a sample via the sample accession, and each run is linked to its experiment.
+
+#### Example
+
+```bash
+# After receiving sample_receipt.xml from ENA
+python faire2ena_run.py \
+  -i rowley_shoals_metadata.xlsx \
+  -r sample_receipt.xml \
+  -s PRJEB12345 \
+  -c "OceanOmics" \
+  -e ena_experiments.xml \
+  -o ena_runs.xml \
+  -m "Illumina NovaSeq 6000"
+```
+
+#### Output
+
+The script will generate two files and print summary information:
+
+```
+INFO: Loaded 245 sample accessions from receipt
+INFO: Generated EXPERIMENT XML with 245 experiments -> ena_experiments.xml
+INFO: Generated RUN XML with 245 runs -> ena_runs.xml
+```
+
+If any samples are missing from the receipt, you'll see warnings:
+
+```
+WARNING: Skipped 3 samples without accessions:
+  - RS19_C20_E_2
+  - RS19_M12_C_2
+  - RS19_M15_A_1
+```
+
 ## Input Format
 
-The tool expects an Excel file with two sheets:
+Boh scripts expects an Excel file with multiple sheets:
 
 1. **`projectMetadata`** - Contains project-level information including `project_id`
 2. **`sampleMetadata`** - Starting at row 3, contains FAIRe-formatted sample data
+3. **`experimentRunMetadata`** - Starting at row 3, contains sequencing run and library preparation data
 
-### Required Fields
+### Sample Metadata Sheet (`sampleMetadata`)
+
+#### Required Fields
 
 - `eventDate` - Collection date (ISO 8601 format)
 - `decimalLatitude` - Latitude in decimal degrees
@@ -64,7 +146,7 @@ The tool expects an Excel file with two sheets:
 - `env_medium` - Environmental medium (with ENVO terms)
 - `minimumDepthInMeters` - Sampling depth
 
-### Optional Fields
+#### Optional Fields
 
 The tool supports mapping for 50+ optional fields including:
 - Water chemistry (salinity, pH, dissolved oxygen, nutrients)
@@ -74,9 +156,38 @@ The tool supports mapping for 50+ optional fields including:
 
 See the [Field Mapping](#field-mapping) section for complete details.
 
+### Experiment/Run Metadata Sheet (`experimentRunMetadata`)
+
+#### Required Fields
+
+- `samp_name` - Sample name (must match `samp_name` from `sampleMetadata`)
+- `lib_id` - Library identifier
+- `filename` - Forward read FASTQ filename
+- `filename2` - Reverse read FASTQ filename
+- `checksum_filename` - MD5 checksum for forward read
+- `checksum_filename2` - MD5 checksum for reverse read
+
+#### Optional Fields
+
+- `assay_name` - Assay or marker name
+- `pcr_plate_id` - PCR plate identifier
+- `seq_run_id` - Sequencing run identifier
+- `lib_conc` - Library concentration value
+- `lib_conc_unit` - Library concentration unit
+- `lib_conc_meth` - Library quantification method
+- `phix_perc` - PhiX spike-in percentage
+- `mid_forward` - Forward index/barcode
+- `mid_reverse` - Reverse index/barcode
+- `input_read_count` - Number of raw reads
+- `output_read_count` - Number of processed reads
+- `output_otu_num` - Number of OTUs/ASVs
+- `otu_num_tax_assigned` - Number of taxonomically assigned OTUs
+
 ## Output Format
 
-The tool generates an ENA-compliant XML file structured as:
+### Sample XML (`faire2ena_sample.py`)
+
+The tool generates an ENA-compliant SAMPLE XML file structured as:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -88,7 +199,7 @@ The tool generates an ENA-compliant XML file structured as:
     <SAMPLE_ATTRIBUTES>
       <SAMPLE_ATTRIBUTE>
         <TAG>amount or size of sample collected</TAG>
-        <VALUE>1.0</VALUE>
+        <VALUE>1.0 L</VALUE>
         <UNITS>L</UNITS>
       </SAMPLE_ATTRIBUTE>
       <SAMPLE_ATTRIBUTE>
@@ -103,18 +214,92 @@ The tool generates an ENA-compliant XML file structured as:
 </SAMPLE_SET>
 ```
 
-You can then submit that XML to ENA via curl - see the [ENA manual](https://ena-docs.readthedocs.io/en/latest/submit/general-guide/programmatic.html).
+### Experiment XML (`faire2ena_run.py`)
 
-Example (note the use of wwwdev, the test server):
+The tool generates an ENA-compliant EXPERIMENT XML file:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<EXPERIMENT_SET>
+  <EXPERIMENT alias="RS19_C13_A" center_name="OceanOmics">
+    <TITLE>RS19_C13_A</TITLE>
+    <STUDY_REF accession="PRJEB12345"/>
+    <DESIGN>
+      <DESIGN_DESCRIPTION>eDNA metabarcoding</DESIGN_DESCRIPTION>
+      <SAMPLE_DESCRIPTOR accession="ERS32025180"/>
+      <LIBRARY_DESCRIPTOR>
+        <LIBRARY_NAME>RS19_C13_A</LIBRARY_NAME>
+        <LIBRARY_STRATEGY>AMPLICON</LIBRARY_STRATEGY>
+        <LIBRARY_SOURCE>METAGENOMIC</LIBRARY_SOURCE>
+        <LIBRARY_SELECTION>PCR</LIBRARY_SELECTION>
+        <LIBRARY_LAYOUT>
+          <PAIRED/>
+        </LIBRARY_LAYOUT>
+      </LIBRARY_DESCRIPTOR>
+    </DESIGN>
+    <PLATFORM>
+      <ILLUMINA>
+        <INSTRUMENT_MODEL>Illumina NovaSeq 6000</INSTRUMENT_MODEL>
+      </ILLUMINA>
+    </PLATFORM>
+  </EXPERIMENT>
+  <!-- More experiments... -->
+</EXPERIMENT_SET>
+```
+
+### Run XML (`faire2ena_run.py`)
+
+The tool generates an ENA-compliant RUN XML file:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<RUN_SET>
+  <RUN alias="RS19_C13_A_run" center_name="OceanOmics">
+    <EXPERIMENT_REF refname="RS19_C13_A"/>
+    <DATA_BLOCK>
+      <FILES>
+        <FILE filename="RS19_C13_A.R1.fq.gz" filetype="fastq" 
+              checksum_method="MD5" checksum="674097d23b8497452c223a933325cbf3"/>
+        <FILE filename="RS19_C13_A.R2.fq.gz" filetype="fastq" 
+              checksum_method="MD5" checksum="0f4a6a2dc433b8da4269b864d8d9a314"/>
+      </FILES>
+    </DATA_BLOCK>
+  </RUN>
+  <!-- More runs... -->
+</RUN_SET>
+```
+
+### Submission to ENA
+
+You can submit these XML files to ENA via curl - see the [ENA manual](https://ena-docs.readthedocs.io/en/latest/submit/general-guide/programmatic.html).
+
+#### Sample Submission Example
 
 ```bash
-curl -u 'your_secret_ENI_email@office.com':'please_dont_steal_my_password_i_WILL_cry' \
+curl -u 'your_email@office.com':'please_dont_steal_my_password_I_WILL_cry' \
   -F "SUBMISSION=@submission.xml" \
-  -F "SAMPLE=@ena_submission.xml" \
+  -F "SAMPLE=@ena_samples.xml" \
   https://wwwdev.ebi.ac.uk/ena/submit/drop-box/submit
 ```
 
+This will return a receipt XML file with sample accessions (ERS...).
+
+#### Experiment and Run Submission Example
+
+```bash
+curl -u 'your_email@office.com':'your_password' \
+  -F "SUBMISSION=@submission.xml" \
+  -F "EXPERIMENT=@ena_experiments.xml" \
+  -F "RUN=@ena_runs.xml" \
+  https://wwwdev.ebi.ac.uk/ena/submit/drop-box/submit
+```
+
+**Note:** Use `wwwdev.ebi.ac.uk` for testing. For production submissions, use `www.ebi.ac.uk`.
+
 ## Field Mapping
+
+
+The FAIRe fields differ a bit from the ENA checklist fields. Here's the mapping.
 
 ### Core Metadata
 
@@ -169,7 +354,7 @@ curl -u 'your_secret_ENI_email@office.com':'please_dont_steal_my_password_i_WILL
 
 ### Mandatory Field Validation
 
-The tool automatically validates that all mandatory ENA fields are present. If any are missing, default values are applied:
+`faire2end_sample.py` validates that all mandatory ENA fields are present. If any are missing, default values are applied:
 
 ```
 WARNING: Sample name RS19_RS1_1_A missing mandatory field 'depth', setting to default '0'
@@ -213,7 +398,9 @@ process_faire_df(df, args.output_file, project_name,
 
 ## Troubleshooting
 
-### Missing Mandatory Fields
+### Sample Submission Issues
+
+#### Missing Mandatory Fields
 
 If you see validation warnings, check that your FAIRe file contains:
 1. Collection date in ISO 8601 format (YYYY-MM-DD)
@@ -223,29 +410,58 @@ If you see validation warnings, check that your FAIRe file contains:
 
 The tool will apply sensible defaults for OceanOmics samples if these are missing.
 
-### Invalid Collection Dates
+#### Invalid Collection Dates
 
 Dates with invalid months or days (e.g., `2019-00-00`) will be automatically set to `'not provided'`. Ensure dates follow ISO 8601 format or use year-only precision if exact dates are unknown.
 
-### Unit Handling
+#### Unit Handling
 
-Fields with units are automatically combined:
-- `samp_size: 1` + `samp_size_unit: L` → `amount or size of sample collected: 1 L`
+Units also added to specific fields via the `<UNITS>` XML tag, there's a hardcoded look-up table which you may need to change.
 
-Units are also added to specific fields via the `<UNITS>` XML tag:
 - `depth` → units: `m`
 - `geographic location (latitude/longitude)` → units: `DD` (decimal degrees)
 - `amount or size of sample collected` → units: `L`
 
-### Geographic Location Parsing
+#### Geographic Location Parsing
 
 The `geo_loc_name` field is automatically parsed to extract the country/sea name:
 - Input: `Indian Ocean: Rowley Shoals, Mermaid`
 - Output: `Indian Ocean` (text before the first colon)
 
-### Empty Values
+#### Empty Values
 
 Empty or `NaN` values are handled as follows:
 - For control samples: set to `'missing: control sample'`
 - For regular samples with missing mandatory fields: replaced with defaults
 - Optional empty fields: omitted from the XML output
+
+### Experiment/Run Submission Issues
+
+#### Missing Sample Accessions
+
+If samples are skipped during run submission, check:
+1. The receipt XML file contains all sample accessions
+2. The `samp_name` values match exactly between `sampleMetadata` and `experimentRunMetadata` sheets
+3. All samples were successfully submitted in the first step
+
+The script will warn you about skipped samples:
+```
+WARNING: Skipped 3 samples without accessions:
+  - RS19_C20_E_2
+  - RS19_M12_C_2
+```
+
+#### Missing FASTQ Files or Checksums
+
+Ensure your `experimentRunMetadata` sheet contains:
+- `filename` and `filename2` - full FASTQ filenames with extensions
+- `checksum_filename` and `checksum_filename2` - valid MD5 checksums
+
+You can generate MD5 checksums with:
+```bash
+md5sum your_file.fastq.gz
+```
+
+#### Study Accession
+
+Make sure you have a valid ENA study accession (PRJEB...) before submitting experiments and runs. You need to create a study separately through the ENA Webin portal or API.
