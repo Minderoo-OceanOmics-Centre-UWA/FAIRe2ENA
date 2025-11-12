@@ -141,7 +141,7 @@ ftp://webin2.ebi.ac.uk//rowley_shoals_2019
   - Test server: `webin2.ebi.ac.uk` (files deleted after 24 hours)
   - Production server: `webin.ebi.ac.uk` (permanent storage)
 - **File naming**: The filenames in your `experimentRunMetadata` sheet must match exactly what you upload
-- **MD5 checksums**: Generate checksums before upload with `md5sum *.fastq.gz`
+- **MD5 checksums**: These are taken from `experimentRunMetadata` as well. Make sure they match!
 - **Upload time**: Large files may take considerable time to upload
 
 ### 3. Experiment and Run Submission (`faire2ena_run.py`)
